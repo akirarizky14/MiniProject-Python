@@ -1,26 +1,50 @@
-import cv2 
-import time
-import numpy as np
-import Hand_Tracking_Module as htm
-import time
+import cv2
+from tracker import *
 
-wCam ,hCam = 640,480
-capture = cv2.VideoCapture(0)
-capture.set(3,wCam)
-capture.set(4,hCam)
-pTime = 0
-detector = htm.handDetector(maxHands=1)
+# Create tracker object
+tracker = EuclideanDistTracker()
+
+cap = cv2.VideoCapture("highway.mp4")
+
+# Object detection(Stable Camera)
+object_detector = cv2.createBackgroundSubtractorMOG2(history=100,varThreshold=40)
+
 
 while True:
-    success, img = capture.read()
-    img = detector.findHands(img)
-    lmList, bbox = detector.findPosition(img)
+    ret, frame = cap.read()
+    height, width, _ = frame.shape
 
-    # Frame Rate
-    cTime = time.time()
-    fps = 1/ (cTime - pTime)
-    pTime = cTime
-    cv2.putText(img,str(int(fps)),(20,50),cv2.FONT_HERSHEY_PLAIN,3,(255,0,0),3)
-    # Display
-    cv2.imshow("Video", img)
-    cv2.waitKey(1)
+    # Extract Region of interest
+    roi = frame[340: 720,500: 800]
+
+    # 1. Object Detection
+    mask = object_detector.apply(roi)
+    _, mask = cv2.threshold(mask, 254, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    detections = []
+    for cnt in contours:
+        # Calculate area and remove small elements
+        area = cv2.contourArea(cnt)
+        if area > 100:
+            #cv2.drawContours(roi, [cnt], -1, (0, 255, 0), 2)
+            x, y, w, h = cv2.boundingRect(cnt)
+
+
+            detections.append([x, y, w, h])
+    
+    # Object Tracking
+    boxes_ids = tracker.update(detections)
+    for box_id in boxes_ids:
+        x,y,w,h,id = box_id
+        cv2.putText(roi,str(id),(x,y-15),cv2.FONT_HERSHEY_COMPLEX,1,(255,0,0),1)
+        cv2.rectangle(roi,(x,y),(x+w,y+h),(0,255,0),3)
+    cv2.imshow("Frame",frame)
+    
+    cv2.imshow("Mask",mask)
+    cv2.imshow("roi",roi)
+    key = cv2.waitKey(30)
+    if key == 27:
+        break
+
+cap.release()
+cv2.destroyAllWindows()
